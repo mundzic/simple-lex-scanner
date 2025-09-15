@@ -5,62 +5,110 @@
  *      Author: Sulejman
  */
 
-#include <iostream>
-
 #include <Scanner.h>
-#include <Cfg.h>
-#include <KernelBuilder.h>
-
 #include <iostream>
 
 
-Scanner::Scanner(const char* xfile)
-	: cfg(Cfg::instance())
+Scanner::Scanner(const string& xfile)
+    : cfg(&Cfg::instance())
     , xfilename(xfile)
     , infile(xfile)
     , tokenCount(0)
     , lineCount(1)
-    , columnCount(1)
+    , columnCount(2)
 {
-
     if(!infile)
     {
-        cout << "no input file!" << endl;
+        error("no input file!");
     }
+
+    prev_TokenPtr = curr_TokenPtr = lookahead_TokenPtr = &tokens[tokenCount];
+
     get_ansii_symbol();  //get lookahead symbol
     get_ansii_symbol();  //get current symbol
     step();              //get lookahead token
     step();              //get current token
 }
 
-Scanner::~Scanner(void){}
 
-void Scanner::error(const string& msg)
+Scanner::~Scanner(void)
 {
-    fault_reporter(msg.c_str(), "ERROR");
-}
-void Scanner::warning(const string& msg)
-{
-    fault_reporter(msg.c_str(), "WARNING");
-}
-void Scanner::info(const string& msg)
-{
-    fault_reporter(msg.c_str(), "INFO");
+    stop();
 }
 
-void Scanner::fault_reporter(const char* msg, const char* severity)
+void Scanner::read_file(const string& xfile)
+{
+    if (infile.is_open())
+        infile.close();
+
+    tokenCount  = 0;
+    lineCount   = 1;
+    columnCount = 1;
+
+    xfilename   = xfile;
+
+    infile.open(xfile);
+
+    start();
+}
+
+void Scanner::start(void)
+{
+    if(!infile)
+    {
+        error("no input file!");
+    }
+    else
+    {
+        get_ansii_symbol();  //get lookahead symbol
+        get_ansii_symbol();  //get current symbol
+        step();              //get lookahead token
+        step();              //get current token
+    }
+}
+
+void Scanner::stop(void)
+{
+    if (infile.is_open())
+        infile.close();
+}
+
+void Scanner::error(const string& msg, TokenLocus tl)
+{
+    fault_reporter(msg.c_str(), "ERROR", tl);
+}
+void Scanner::warning(const string& msg, TokenLocus tl)
+{
+    fault_reporter(msg.c_str(), "WARNING", 0);
+}
+void Scanner::info(const string& msg, TokenLocus tl)
+{
+    fault_reporter(msg.c_str(), "INFO", tl);
+}
+
+void Scanner::fault_reporter(const char* msg, const char* severity, TokenLocus token_locus)
 {
     const char*  srcFilename = xfilename.c_str();
 
-    unsigned     lineNo      = curr_TokenPtr->line;
-    unsigned     columnNo    = curr_TokenPtr->startColumn;
+    Token*       atToken    = token_locus == 1 ? lookahead_TokenPtr :
+                              token_locus == 0 ? curr_TokenPtr : prev_TokenPtr;
 
-    const char*  cursorText   = curr_TokenPtr->value.c_str();
+    //const char*  atModifier = token_locus == 1 ? "before" :
+    //                          token_locus == 0 ? "@" : "after";
+
+
+    unsigned     lineNo      = atToken->line;
+    unsigned     columnNo    = atToken->startColumn;
+
+    const char*  cursorText  = atToken->value.c_str();
     const char*  atModifier  = "before";
 
     const char*  inMsg       = msg;
 
-    fprintf(stdout, "[%s:[%d]:[%d]] %s @ %s \'%s\' cause: %s\n", srcFilename,
+
+    FILE* out = stdout;
+
+    fprintf(out, "[%s:[%d]:[%d]] %s @ %s \'%s\' cause: %s\n", srcFilename,
             lineNo, columnNo, severity, atModifier, cursorText, inMsg);
     flush(cout);
 }
@@ -127,7 +175,7 @@ bool Scanner::expect(const char* key)
 /*
  *
  *
- * PRIVATE METHODS IMPLEMENTING UNA LEXER
+ * PRIVATE METHODS IMPLEMENTING C-SUBSET LEXER
  *
  *
  */
@@ -150,7 +198,7 @@ void Scanner::error(TokenTag tag, const string& msg)
     }
     else if (tag == eof)
     {
-        errMsg = "parse error: preterm end of input expected";
+        errMsg = "parser abrupt input stream processing";
     }
     else if (tag == err && msg == "")  // else if (msg == "")
     {
@@ -165,10 +213,10 @@ void Scanner::error(TokenTag tag, const string& msg)
     }
     else //handle expect() requests requested by character string
     {
-        if (cfg.symbol_code(msg) != -1)
+        if (cfg->symbol_code(msg.c_str()) != -1)
             errMsg = "syntax error: expected syntax construct (token) \'" + msg + "\' missing";
         else
-            errMsg = "parse error: \'" + msg + "\' grammar unconfirming token";
+            errMsg = "parse error: \'" + msg + "\' grammar non conform token";
     }
 
     fprintf(stdout, "[%s:[%d]:[%d]] ERROR @ following \'%s\' cause: %s\n",
@@ -243,7 +291,6 @@ void Scanner::get_constant_number()
         lookahead_TokenPtr->value += curr_SymbolValue;
         if (curr_SymbolValue == '.')
         {
-            //cout << "Scanner::get_constant_number(): REAL" << endl;
             lookahead_TokenPtr->type.tag = real;
         }
         get_ansii_symbol();
@@ -252,22 +299,26 @@ void Scanner::get_constant_number()
 
 void Scanner::get_symbols_token()
 {
+    int is_Keyword;
     do
     {
-        if (curr_SymbolType == operatorsymb)
+        is_Keyword = cfg->symbol_code((lookahead_TokenPtr->value + curr_SymbolValue).c_str()) != -1;
+
+        if (curr_SymbolType == operatorsymb && is_Keyword)
             lookahead_TokenPtr->value += curr_SymbolValue;
     }
-    while ( accept(operatorsymb) );
+    while ( is_Keyword && accept(operatorsymb) );
 }
+
 
 void Scanner::get_string_token()
 {
-    do
+
+    while (curr_SymbolType == alphasymb || (curr_SymbolType == digitsymb))
     {
-        if (curr_SymbolType == alphasymb)
-            lookahead_TokenPtr->value += curr_SymbolValue;
+        lookahead_TokenPtr->value += curr_SymbolValue;
+        get_ansii_symbol();
     }
-    while ( accept(alphasymb) );
 }
 
 
@@ -284,7 +335,7 @@ void Scanner::get_program_token()
     else if (accept(alphasymb))
     {
         get_string_token();
-        lookahead_TokenPtr->type.code = cfg.symbol_code(lookahead_TokenPtr->value);
+        lookahead_TokenPtr->type.code = cfg->symbol_code(lookahead_TokenPtr->value.c_str());
         if (lookahead_TokenPtr->type.code != -1)
         {
             lookahead_TokenPtr->type.tag  = keyword;
@@ -293,17 +344,18 @@ void Scanner::get_program_token()
         {
             lookahead_TokenPtr->type.tag = identifier;
         }
+        lookahead_TokenPtr->endColumn = lookahead_TokenPtr->startColumn + lookahead_TokenPtr->value.size();
     }
     else if (accept(digitsymb))
     {
         get_constant_number();
-        //curr_TokenPtr->type.tag = integer;
         lookahead_TokenPtr->type.code = -1;
+        lookahead_TokenPtr->endColumn = lookahead_TokenPtr->startColumn + lookahead_TokenPtr->value.size();
     }
     else if (accept(operatorsymb))
     {
         get_symbols_token();
-        SymbolCode code = cfg.symbol_code(lookahead_TokenPtr->value);
+        SymbolCode code = cfg->symbol_code(lookahead_TokenPtr->value.c_str());
 
         if (code != -1)
         {
@@ -312,15 +364,14 @@ void Scanner::get_program_token()
         }
         else
         {
-            //consider using assert in this place
             lookahead_TokenPtr->type.tag = err;
             lookahead_TokenPtr->type.code = code;
         }
+        lookahead_TokenPtr->endColumn = lookahead_TokenPtr->startColumn + lookahead_TokenPtr->value.size();
     }
     else if (accept(separatorsymb))
     {
-        SymbolCode code = cfg.symbol_code(lookahead_TokenPtr->value);
-
+        SymbolCode code = cfg->symbol_code(lookahead_TokenPtr->value.c_str());
         if (code != -1)
         {
             lookahead_TokenPtr->type.tag  = keyword;
@@ -331,7 +382,7 @@ void Scanner::get_program_token()
             lookahead_TokenPtr->type.tag = err;
             lookahead_TokenPtr->type.code = code;
         }
-
+        lookahead_TokenPtr->endColumn = lookahead_TokenPtr->startColumn + lookahead_TokenPtr->value.size();
     }
     else if (accept(eofsymb))
     {
@@ -340,16 +391,19 @@ void Scanner::get_program_token()
     }
     else
     {
-        lookahead_TokenPtr->type.tag = err;
-        error("get_program_token: syntax error");
-        cout << lookahead_TokenPtr->value << endl;
-        get_ansii_symbol();
-    }
+        lookahead_TokenPtr->type.tag  = err;
+        lookahead_TokenPtr->type.code = -1;
+        string errMsg = "\'" + lookahead_TokenPtr->value +  "\' stray input";
+        fault_reporter(errMsg.c_str(), "WARNING", true);
+        do
+        {
+            get_ansii_symbol();
+        }
+        while( (lookahead_SymbolType == errsymb) && !(lookahead_SymbolType == eofsymb));
+        get_ansii_symbol(); //move read-head ahead
+        get_program_token();
 
-    if (lookahead_TokenPtr->line == curr_tokenLine)
-        lookahead_TokenPtr->endColumn = curr_tokenColumn;
-    else
-        lookahead_TokenPtr->endColumn = prev_tokenColumn;
+    }
 }
 
 
@@ -382,18 +436,22 @@ void Scanner::get_ansii_symbol(void)
 
             case '=': case '+': case '-': case '*': case '/':
             case '%': case '<': case '>': case '|': case '&':
-            case '~': case ':':
+            case '~': case ':': case '^': case '!': case '?':
+            case '.':
                 lookahead_SymbolType = operatorsymb;
                 break;
 
+            //separator symbols appear only in single symbol token
+            //they can not be put together to build multiply symbol token
             case '(': case ')': case '{': case '}': case '[': case ']':
-            case ';': case ',': case '?': case '!': case '.':
+            case ';': case ',':
                 lookahead_SymbolType = separatorsymb;
                 break;
 
             default:
                 if ( (lookahead_SymbolValue >= 'A' && lookahead_SymbolValue <= 'Z') ||
-                     (lookahead_SymbolValue >= 'a' && lookahead_SymbolValue <= 'z')  )
+                     (lookahead_SymbolValue >= 'a' && lookahead_SymbolValue <= 'z') ||
+                     (lookahead_SymbolValue == '_')                                  )
                     lookahead_SymbolType = alphasymb;
                 else
                     lookahead_SymbolType = errsymb;
@@ -403,6 +461,7 @@ void Scanner::get_ansii_symbol(void)
         return;
     }
     lookahead_SymbolType = eofsymb;
+    stop();
     return;
 }
 

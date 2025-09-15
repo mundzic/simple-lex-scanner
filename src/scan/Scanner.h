@@ -8,23 +8,24 @@
 #ifndef SCENNER_H_
 #define SCENNER_H_
 
+
+#include <Token.h>
+#include "Cfg.h"
+
 #include <string>
 #include <fstream>
 
-#include "../cfg/Cfg.h"
-#include "Token.h"
-
 using std::string;
 using std::ifstream;
-
-
 
 class Scanner
 {
 
 public:
-  Scanner(const char* xfile);
+  Scanner(const string& xfile);
   virtual ~Scanner(void);
+
+  void   read_file(const string& xfile);
 
   void   step(void);
 
@@ -34,19 +35,29 @@ public:
   bool   expect(TokenTag tag);
   bool   expect(const char* key);
 
+  typedef int TokenLocus;
 
-  const Token&  token(void)  const { return *curr_TokenPtr; }
-  TokenTag      token_tag(void) const  { return curr_TokenPtr->type.tag; }
-  const string& token_text(void) const { return curr_TokenPtr->value; }
+  const Token&  token(TokenLocus tl = 0)  const     { return *curr_TokenPtr; }
+  TokenTag      token_tag(TokenLocus tl = 0) const  { return curr_TokenPtr->type.tag; }
+  const string& token_text(TokenLocus tl = 0) const { return curr_TokenPtr->value; }
 
-  const Token&  lookahead_token(void) const { return *lookahead_TokenPtr; }
-  TokenTag      lookahead_tag(void) const { return lookahead_TokenPtr->type.tag; }
-  const string& lookahead_text(void) const { return lookahead_TokenPtr->value; }
+  const Token&  lookahead_token() const { return *lookahead_TokenPtr; }
+  TokenTag      lookahead_tag() const   { return lookahead_TokenPtr->type.tag; }
+  const string& lookahead_text(void) const  { return lookahead_TokenPtr->value; }
+
+  const Token&  lookbehind_token() const { return *prev_TokenPtr; }
+  TokenTag      lookbehind_tag() const   { return prev_TokenPtr->type.tag; }
+  const string& lookbehind_text() const  { return prev_TokenPtr->value; }
 
 
-  virtual void error(const string& msg);
-  virtual void warning(const string& msg);
-  virtual void info(const string& msg);
+  const string& filename(void) const { return xfilename; }
+
+  virtual void error(const string& msg, TokenLocus tl = 0);
+  virtual void warning(const string& msg, TokenLocus tl = 0);
+  virtual void info(const string& msg, TokenLocus tl = 0);
+
+  Scanner* operator->() const { return (Scanner*)this; }
+
 
 private:
   typedef enum
@@ -54,7 +65,7 @@ private:
     blanksymb,
     alphasymb,
     digitsymb,
-    //punctuatorsym
+    escapesym,
     operatorsymb,
     separatorsymb,
     errsymb,
@@ -63,7 +74,9 @@ private:
 
   typedef const unsigned buffsize_t;
 
-  void fault_reporter(const char* msg, const char* severity = "ERROR");
+  void start();
+  void stop();
+  void fault_reporter(const char* msg, const char* severity = "ERROR", TokenLocus token_locus = 0);
   void error(TokenTag tag, const string& msg);
   int  accept(ANSII_SymbolType t);
   void get_ansii_symbol(void);
@@ -77,9 +90,9 @@ private:
   void get_symbols_token();
   void get_string_token();
 
-  const Cfg&       cfg;
-  const string     xfilename;
+  const Cfg*       cfg;
 
+  string           xfilename;
   ifstream         infile;
 
   ANSII_SymbolType curr_SymbolType;
@@ -97,7 +110,7 @@ private:
   Token            tokens[TOKBUFF_SIZE];
   unsigned         tokenCount;
 
-
+  //TODO: encapsulate it InputCursor
   unsigned         curr_tokenLine;
   unsigned         curr_tokenColumn;
   unsigned         prev_tokenColumn;
