@@ -1,5 +1,10 @@
 #Directories
 /build
+/out
+
+#own build files helpers
+CMakePresets.json
+DoFreshBuild.sh
 
 # Prerequisites
 *.d
