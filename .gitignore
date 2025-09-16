@@ -1,10 +1,18 @@
-#Directories
+# Artifacts directories
 /build
 /out
 
-#own build files helpers
+# Own build script helpers
 CMakePresets.json
 DoFreshBuild.sh
+
+# VS Code project files
+.vscode/
+
+# Eclipse project files
+.project
+.cproject
+.settings/  
 
 # Prerequisites
 *.d
